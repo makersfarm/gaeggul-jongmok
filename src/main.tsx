@@ -25,6 +25,7 @@ import {
   Sparkles,
   Sun,
   TrendingUp,
+  WalletCards,
   Users,
   Volume2,
 } from "lucide-react";
@@ -106,6 +107,30 @@ type ComputedDart = {
   fundamentals: string[];
   reports: Report[];
   verdict: string;
+};
+
+type FundamentalAnalysis = {
+  grade: string;
+  summary: string;
+  opinion: string;
+  metrics: {
+    label: string;
+    value: string;
+    status: SignalLevel;
+    plain: string;
+    formula: string;
+  }[];
+  concepts: {
+    title: string;
+    description: string;
+    easy: string;
+  }[];
+  checklist: {
+    label: string;
+    passed: boolean;
+    detail: string;
+  }[];
+  caveats: string[];
 };
 
 const stocks: Stock[] = [
@@ -485,6 +510,114 @@ function applyDartSignals(stock: Stock, items: DartItem[]): ComputedDart {
   };
 }
 
+function buildFundamentalAnalysis(stock: Stock): FundamentalAnalysis {
+  const dartCount = stock.dart.filter((item) => !item.title.includes("미설정")).length;
+  const highImpact = stock.dart.filter((item) => item.impact === "high").length;
+  const cautionImpact = stock.dart.filter((item) => item.impact === "danger" || item.type.includes("주의")).length;
+  const volumeQuality = stock.volumeRank <= 2 ? "high" : stock.volumeRank <= 4 ? "medium" : "low";
+  const disclosureQuality = dartCount >= 4 ? "high" : dartCount >= 2 ? "medium" : "low";
+  const dataCoverage = clampScore(stock.accuracyScore + dartCount * 2 + highImpact * 2 - cautionImpact * 4, 0, 100);
+  const qualityScore = clampScore(stock.trustScore + highImpact * 3 - cautionImpact * 5, 0, 100);
+  const valuationRisk = clampScore(35 + Math.abs(stock.change) * 8 + stock.riskScore * 0.35 + cautionImpact * 10, 0, 100);
+  const momentumSupport = clampScore(45 + Math.max(stock.change, 0) * 8 + (6 - stock.volumeRank) * 4 + highImpact * 3, 0, 100);
+  const fundamentalScore = clampScore(
+    dataCoverage * 0.3 + qualityScore * 0.25 + momentumSupport * 0.25 + (100 - valuationRisk) * 0.2,
+    0,
+    100,
+  );
+  const grade = fundamentalScore >= 78 ? "우수" : fundamentalScore >= 64 ? "양호" : fundamentalScore >= 50 ? "중립" : "주의";
+  const positive = highImpact + (stock.volumeRank <= 2 ? 1 : 0) + (stock.trustScore >= 75 ? 1 : 0);
+  const negative = cautionImpact + (stock.riskScore >= 70 ? 1 : 0) + (Math.abs(stock.change) >= 8 ? 1 : 0);
+
+  return {
+    grade,
+    summary:
+      dartCount > 0
+        ? `최근 DART 공시 ${dartCount}건과 공개 시세를 함께 보면, 이 종목은 ${grade} 구간입니다. 공시 기반 근거는 ${disclosureQuality === "high" ? "충분한 편" : disclosureQuality === "medium" ? "보통" : "아직 제한적"}이고, 단기 가격 부담은 ${valuationRisk >= 70 ? "높습니다" : valuationRisk >= 50 ? "보통입니다" : "낮은 편입니다"}.`
+        : "아직 DART 공시 데이터가 연결되지 않아 공개 시세와 뉴스 중심의 예비 분석입니다.",
+    opinion:
+      positive > negative
+        ? "근거가 아예 없는 테마성 움직임보다는 낫습니다. 다만 매수 판단은 최근 공시 원문과 다음 실적 확인 후로 미루는 편이 안전합니다."
+        : positive === negative
+          ? "좋은 신호와 주의 신호가 섞여 있습니다. 지금은 확신보다 관찰이 더 어울리는 구간입니다."
+          : "단기 관심은 높지만 위험 신호가 더 큽니다. 펀더먼털 투자 관점에서는 추격보다 원문 확인과 가격 안정 확인이 먼저입니다.",
+    metrics: [
+      {
+        label: "데이터 완성도",
+        value: `${dataCoverage}/100`,
+        status: dataCoverage >= 75 ? "high" : dataCoverage >= 55 ? "medium" : "low",
+        plain: "분석에 필요한 자료가 얼마나 채워졌는지 보는 점수입니다.",
+        formula: "정확성 점수 + DART 공시 보정 + 주요 공시 보정 - 주의 공시 감점",
+      },
+      {
+        label: "사업 근거 강도",
+        value: `${qualityScore}/100`,
+        status: qualityScore >= 75 ? "high" : qualityScore >= 55 ? "medium" : "low",
+        plain: "공시와 거래량이 실제 판단 근거로 쓸 만한지 보는 점수입니다.",
+        formula: "신뢰도 + 사업/실적 공시 가점 - 주의 공시 감점",
+      },
+      {
+        label: "가격 부담",
+        value: `${valuationRisk}/100`,
+        status: valuationRisk >= 70 ? "danger" : valuationRisk >= 50 ? "medium" : "low",
+        plain: "가격이 이미 빠르게 움직여 추격 매수 부담이 있는지 봅니다.",
+        formula: "기본 부담 + 등락률 보정 + 위험지수 보정 + 주의 공시 가점",
+      },
+      {
+        label: "수급 지지",
+        value: `${momentumSupport}/100`,
+        status: momentumSupport >= 75 ? "high" : momentumSupport >= 55 ? "medium" : "low",
+        plain: "거래량과 상승 흐름이 종목 관심을 뒷받침하는지 봅니다.",
+        formula: "기본 점수 + 상승률 보정 + 거래량 순위 보정 + 긍정 공시 보정",
+      },
+    ],
+    concepts: [
+      {
+        title: "펀더먼털",
+        description: "회사의 매출, 이익, 재무상태, 사업 경쟁력처럼 가격 뒤에 있는 실제 체력을 보는 분석입니다.",
+        easy: "주가가 인기투표라면, 펀더먼털은 그 회사가 실제로 돈을 잘 벌고 버틸 수 있는지 보는 건강검진입니다.",
+      },
+      {
+        title: "공시",
+        description: "회사가 투자자에게 의무적으로 공개하는 공식 문서입니다. 사업 변화, 지분 변화, 실적, 계약 같은 정보가 들어갑니다.",
+        easy: "소문이 아니라 회사가 공식적으로 낸 문서라서, 뉴스보다 먼저 확인해야 하는 1차 자료입니다.",
+      },
+      {
+        title: "가격 부담",
+        description: "좋은 회사라도 주가가 너무 빨리 오르면 단기적으로 손실 위험이 커질 수 있다는 뜻입니다.",
+        easy: "좋은 물건도 너무 비싸게 사면 좋은 투자가 아닐 수 있습니다.",
+      },
+    ],
+    checklist: [
+      {
+        label: "최근 공시 확인",
+        passed: dartCount > 0,
+        detail: dartCount > 0 ? `최근 공시 ${dartCount}건을 확인했습니다.` : "공시 원문 연결이 아직 필요합니다.",
+      },
+      {
+        label: "거래량 관심",
+        passed: volumeQuality !== "low",
+        detail: stock.volumeRank <= 2 ? "거래량 상위권으로 시장 관심이 큽니다." : "거래량은 보통 수준입니다.",
+      },
+      {
+        label: "주의 공시",
+        passed: cautionImpact === 0,
+        detail: cautionImpact ? `주의 성격 공시 ${cautionImpact}건이 있어 원문 확인이 필요합니다.` : "강한 주의 공시는 아직 감지되지 않았습니다.",
+      },
+      {
+        label: "추격 부담",
+        passed: valuationRisk < 70,
+        detail: valuationRisk >= 70 ? "단기 가격 부담이 큽니다." : "가격 부담은 관리 가능한 범위입니다.",
+      },
+    ],
+    caveats: [
+      "현재 무료 공개 데이터 기반이라 정식 재무제표 항목 전체를 계산하지는 않습니다.",
+      "PER, PBR, ROE, 부채비율 같은 정밀 지표는 재무제표 API 연결 후 정확도가 올라갑니다.",
+      "이 화면은 투자 판단 보조 도구이며 매수·매도 추천이 아닙니다.",
+    ],
+  };
+}
+
 function rowToStock(row: MarketRow, index: number): Stock {
   const riskScore = Math.min(92, Math.max(18, Math.round(Math.abs(row.changeRate) * 9 + index * 5 + 24)));
   const trustScore = row.volume > 1_000_000 ? 78 : 66;
@@ -574,6 +707,7 @@ function App() {
   const [selectedCode, setSelectedCode] = useState(stocks[0].code);
   const [dataStatus, setDataStatus] = useState("무료 공개 데이터 연결 중");
   const selected = liveStocks.find((stock) => stock.code === selectedCode) ?? liveStocks[0];
+  const fundamentalAnalysis = useMemo(() => buildFundamentalAnalysis(selected), [selected]);
   const ranking = useMemo(
     () =>
       [...liveStocks].sort(
@@ -840,6 +974,8 @@ function App() {
               </Panel>
             </div>
 
+            <FundamentalDetail analysis={fundamentalAnalysis} stock={selected} />
+
             <Panel icon={<Newspaper />} title="최근 뉴스 RSS Preview" wide>
               <div className="newsList">
                 {selected.news.map((news) => (
@@ -904,6 +1040,84 @@ function Metric({
       </span>
       <strong>{value}</strong>
     </article>
+  );
+}
+
+function FundamentalDetail({
+  analysis,
+  stock,
+}: {
+  analysis: FundamentalAnalysis;
+  stock: Stock;
+}) {
+  return (
+    <section className="fundamentalDetail">
+      <div className="fundamentalHeader">
+        <div>
+          <p className="eyebrow">FUNDAMENTAL DEEP DIVE</p>
+          <h3>{stock.name} 펀더먼털 상세 분석</h3>
+        </div>
+        <div className={`gradeBadge ${analysis.grade === "주의" ? "danger" : analysis.grade === "우수" ? "high" : "medium"}`}>
+          {analysis.grade}
+        </div>
+      </div>
+
+      <p className="fundamentalSummary">{analysis.summary}</p>
+
+      <div className="fundamentalMetrics">
+        {analysis.metrics.map((metric) => (
+          <article className="fundamentalMetric" key={metric.label}>
+            <div>
+              <span>{metric.label}</span>
+              <strong className={metric.status}>{metric.value}</strong>
+            </div>
+            <p>{metric.plain}</p>
+            <small>{metric.formula}</small>
+          </article>
+        ))}
+      </div>
+
+      <div className="fundamentalSections">
+        <section>
+          <h4>개념 설명</h4>
+          <div className="conceptList">
+            {analysis.concepts.map((concept) => (
+              <article key={concept.title}>
+                <strong>{concept.title}</strong>
+                <p>{concept.description}</p>
+                <span>{concept.easy}</span>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section>
+          <h4>투자 전 체크리스트</h4>
+          <div className="checkList">
+            {analysis.checklist.map((item) => (
+              <article className={item.passed ? "passed" : "blocked"} key={item.label}>
+                <strong>{item.passed ? "확인" : "주의"}</strong>
+                <div>
+                  <b>{item.label}</b>
+                  <p>{item.detail}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <div className="opinionBox">
+        <strong>종합 의견</strong>
+        <p>{analysis.opinion}</p>
+      </div>
+
+      <div className="caveatBox">
+        {analysis.caveats.map((caveat) => (
+          <span key={caveat}>{caveat}</span>
+        ))}
+      </div>
+    </section>
   );
 }
 

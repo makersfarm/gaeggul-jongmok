@@ -531,6 +531,177 @@ h3 {
   gap: 4px;
 }
 
+.fundamentalDetail {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.fundamentalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.fundamentalHeader h3 {
+  font-size: 22px;
+}
+
+.gradeBadge {
+  min-width: 62px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-align: center;
+  font-weight: 900;
+  background: var(--surface-soft);
+}
+
+.gradeBadge.high {
+  color: var(--good);
+}
+
+.gradeBadge.medium {
+  color: var(--warn);
+}
+
+.gradeBadge.danger {
+  color: var(--danger);
+}
+
+.fundamentalSummary {
+  margin: 14px 0;
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  font-weight: 800;
+  line-height: 1.55;
+}
+
+.fundamentalMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.fundamentalMetric {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.fundamentalMetric div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fundamentalMetric span,
+.fundamentalMetric small,
+.conceptList span,
+.caveatBox span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.fundamentalMetric strong {
+  font-size: 18px;
+}
+
+.fundamentalMetric p,
+.conceptList p,
+.checkList p,
+.opinionBox p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.fundamentalMetric small {
+  line-height: 1.45;
+}
+
+.fundamentalSections {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.fundamentalSections h4 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.conceptList,
+.checkList {
+  display: grid;
+  gap: 10px;
+}
+
+.conceptList article,
+.checkList article,
+.opinionBox,
+.caveatBox {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.conceptList article {
+  display: grid;
+  gap: 6px;
+}
+
+.checkList article {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 10px;
+}
+
+.checkList strong {
+  width: 42px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  font-size: 12px;
+  background: var(--surface);
+}
+
+.checkList .passed strong {
+  color: var(--good);
+}
+
+.checkList .blocked strong {
+  color: var(--danger);
+}
+
+.opinionBox {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  border-color: var(--brand);
+}
+
+.opinionBox strong {
+  color: var(--brand);
+}
+
+.caveatBox {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+}
+
 @media (max-width: 920px) {
   .hero,
   .layout {
@@ -543,6 +714,14 @@ h3 {
 
   .metricGrid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .fundamentalMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fundamentalSections {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -574,8 +753,21 @@ h3 {
   }
 
   .analysisGrid,
-  .metricGrid {
+  .metricGrid,
+  .fundamentalMetrics {
     grid-template-columns: 1fr;
+  }
+
+  .fundamentalDetail {
+    padding: 14px;
+  }
+
+  .fundamentalHeader {
+    align-items: flex-start;
+  }
+
+  .fundamentalHeader h3 {
+    font-size: 19px;
   }
 
   .stockCard {
