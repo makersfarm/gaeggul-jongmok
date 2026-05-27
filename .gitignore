@@ -39,3 +39,6 @@ Thumbs.db
 cloudflared.log
 *.har
 *.webm
+
+# Runtime data cache
+data/cache/

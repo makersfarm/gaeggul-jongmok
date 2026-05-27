@@ -80,6 +80,8 @@ type Stock = {
     caution: string;
   };
   news: NewsItem[];
+  financial?: FinancialPayload;
+  technicalDetail?: TechnicalPayload;
 };
 
 type MarketRow = {
@@ -107,6 +109,37 @@ type ComputedDart = {
   fundamentals: string[];
   reports: Report[];
   verdict: string;
+};
+
+type FinancialPayload = {
+  source: string;
+  year?: string;
+  corp?: { corp_code: string; corp_name: string; stock_code: string };
+  metrics?: {
+    revenue: number | null;
+    operatingIncome: number | null;
+    netIncome: number | null;
+    assets: number | null;
+    liabilities: number | null;
+    equity: number | null;
+    operatingMargin: number | null;
+    netMargin: number | null;
+    debtRatio: number | null;
+    roe: number | null;
+  } | null;
+};
+
+type TechnicalPayload = {
+  source: string;
+  indicators?: {
+    latestClose: number | null;
+    ma5: number | null;
+    ma20: number | null;
+    ma60: number | null;
+    v25: number | null;
+    support20: number | null;
+    resistance20: number | null;
+  };
 };
 
 type FundamentalAnalysis = {
@@ -511,13 +544,28 @@ function applyDartSignals(stock: Stock, items: DartItem[]): ComputedDart {
 }
 
 function buildFundamentalAnalysis(stock: Stock): FundamentalAnalysis {
+  const financial = stock.financial?.metrics;
   const dartCount = stock.dart.filter((item) => !item.title.includes("미설정")).length;
   const highImpact = stock.dart.filter((item) => item.impact === "high").length;
   const cautionImpact = stock.dart.filter((item) => item.impact === "danger" || item.type.includes("주의")).length;
   const volumeQuality = stock.volumeRank <= 2 ? "high" : stock.volumeRank <= 4 ? "medium" : "low";
   const disclosureQuality = dartCount >= 4 ? "high" : dartCount >= 2 ? "medium" : "low";
-  const dataCoverage = clampScore(stock.accuracyScore + dartCount * 2 + highImpact * 2 - cautionImpact * 4, 0, 100);
-  const qualityScore = clampScore(stock.trustScore + highImpact * 3 - cautionImpact * 5, 0, 100);
+  const hasFinancials = Boolean(financial?.revenue || financial?.assets || financial?.equity);
+  const dataCoverage = clampScore(
+    stock.accuracyScore + dartCount * 2 + highImpact * 2 + (hasFinancials ? 18 : 0) - cautionImpact * 4,
+    0,
+    100,
+  );
+  const qualityScore = clampScore(
+    stock.trustScore +
+      highImpact * 3 +
+      (financial?.operatingMargin !== null && financial?.operatingMargin !== undefined && financial.operatingMargin > 8
+        ? 8
+        : 0) -
+      cautionImpact * 5,
+    0,
+    100,
+  );
   const valuationRisk = clampScore(35 + Math.abs(stock.change) * 8 + stock.riskScore * 0.35 + cautionImpact * 10, 0, 100);
   const momentumSupport = clampScore(45 + Math.max(stock.change, 0) * 8 + (6 - stock.volumeRank) * 4 + highImpact * 3, 0, 100);
   const fundamentalScore = clampScore(
@@ -532,8 +580,10 @@ function buildFundamentalAnalysis(stock: Stock): FundamentalAnalysis {
   return {
     grade,
     summary:
-      dartCount > 0
-        ? `최근 DART 공시 ${dartCount}건과 공개 시세를 함께 보면, 이 종목은 ${grade} 구간입니다. 공시 기반 근거는 ${disclosureQuality === "high" ? "충분한 편" : disclosureQuality === "medium" ? "보통" : "아직 제한적"}이고, 단기 가격 부담은 ${valuationRisk >= 70 ? "높습니다" : valuationRisk >= 50 ? "보통입니다" : "낮은 편입니다"}.`
+      hasFinancials
+        ? `${stock.financial?.year}년 사업보고서 주요 재무제표와 최근 DART 공시 ${dartCount}건을 함께 보면, 이 종목은 ${grade} 구간입니다. 영업이익률 ${formatRatio(financial?.operatingMargin)}, ROE ${formatRatio(financial?.roe)}, 부채비율 ${formatRatio(financial?.debtRatio)}를 기준으로 체력을 평가했습니다.`
+        : dartCount > 0
+          ? `최근 DART 공시 ${dartCount}건과 공개 시세를 함께 보면, 이 종목은 ${grade} 구간입니다. 공시 기반 근거는 ${disclosureQuality === "high" ? "충분한 편" : disclosureQuality === "medium" ? "보통" : "아직 제한적"}이고, 단기 가격 부담은 ${valuationRisk >= 70 ? "높습니다" : valuationRisk >= 50 ? "보통입니다" : "낮은 편입니다"}.`
         : "아직 DART 공시 데이터가 연결되지 않아 공개 시세와 뉴스 중심의 예비 분석입니다.",
     opinion:
       positive > negative
@@ -543,18 +593,32 @@ function buildFundamentalAnalysis(stock: Stock): FundamentalAnalysis {
           : "단기 관심은 높지만 위험 신호가 더 큽니다. 펀더먼털 투자 관점에서는 추격보다 원문 확인과 가격 안정 확인이 먼저입니다.",
     metrics: [
       {
-        label: "데이터 완성도",
+        label: "재무 데이터 완성도",
         value: `${dataCoverage}/100`,
         status: dataCoverage >= 75 ? "high" : dataCoverage >= 55 ? "medium" : "low",
         plain: "분석에 필요한 자료가 얼마나 채워졌는지 보는 점수입니다.",
-        formula: "정확성 점수 + DART 공시 보정 + 주요 공시 보정 - 주의 공시 감점",
+        formula: "정확성 점수 + 재무제표 연결 가점 + DART 공시 보정 - 주의 공시 감점",
       },
       {
-        label: "사업 근거 강도",
-        value: `${qualityScore}/100`,
-        status: qualityScore >= 75 ? "high" : qualityScore >= 55 ? "medium" : "low",
-        plain: "공시와 거래량이 실제 판단 근거로 쓸 만한지 보는 점수입니다.",
-        formula: "신뢰도 + 사업/실적 공시 가점 - 주의 공시 감점",
+        label: "수익성",
+        value: formatRatio(financial?.operatingMargin),
+        status: (financial?.operatingMargin ?? 0) >= 10 ? "high" : (financial?.operatingMargin ?? 0) >= 3 ? "medium" : "low",
+        plain: "매출에서 영업이익이 얼마나 남는지 봅니다.",
+        formula: "영업이익률 = 영업이익 / 매출액 x 100",
+      },
+      {
+        label: "재무 안정성",
+        value: formatRatio(financial?.debtRatio),
+        status: financial?.debtRatio === null || financial?.debtRatio === undefined ? "low" : financial.debtRatio <= 100 ? "high" : financial.debtRatio <= 200 ? "medium" : "danger",
+        plain: "자본 대비 빚 부담이 어느 정도인지 봅니다.",
+        formula: "부채비율 = 부채총계 / 자본총계 x 100",
+      },
+      {
+        label: "자본 효율",
+        value: formatRatio(financial?.roe),
+        status: (financial?.roe ?? 0) >= 10 ? "high" : (financial?.roe ?? 0) >= 3 ? "medium" : "low",
+        plain: "자본을 써서 순이익을 얼마나 만들었는지 봅니다.",
+        formula: "ROE = 당기순이익 / 자본총계 x 100",
       },
       {
         label: "가격 부담",
@@ -701,6 +765,21 @@ function formatDartDate(value: string) {
   return `${value.slice(0, 4)}.${value.slice(4, 6)}.${value.slice(6, 8)}`;
 }
 
+function formatMoney(value: number | null | undefined) {
+  if (value === null || value === undefined) return "미확인";
+  if (Math.abs(value) >= 1_0000_0000_0000) return `${Math.round(value / 1_0000_0000_0000).toLocaleString("ko-KR")}조`;
+  if (Math.abs(value) >= 1_0000_0000) return `${Math.round(value / 1_0000_0000).toLocaleString("ko-KR")}억`;
+  return value.toLocaleString("ko-KR");
+}
+
+function formatRatio(value: number | null | undefined) {
+  return value === null || value === undefined ? "미확인" : `${value.toLocaleString("ko-KR")}%`;
+}
+
+function formatNumber(value: number | null | undefined) {
+  return value === null || value === undefined ? "미확인" : value.toLocaleString("ko-KR");
+}
+
 function App() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [liveStocks, setLiveStocks] = useState<Stock[]>(stocks);
@@ -755,9 +834,11 @@ function App() {
     let cancelled = false;
 
     async function loadSecondaryData() {
-      const [newsResult, dartResult] = await Promise.allSettled([
+      const [newsResult, dartResult, fundamentalsResult, technicalsResult] = await Promise.allSettled([
         fetch(`/api/news?name=${encodeURIComponent(selected.name)}`).then((res) => res.json()),
         fetch(`/api/dart?code=${selected.code}`).then((res) => res.json()),
+        fetch(`/api/fundamentals?code=${selected.code}`).then((res) => res.json()),
+        fetch(`/api/technicals?code=${selected.code}`).then((res) => res.json()),
       ]);
 
       if (cancelled) return;
@@ -793,6 +874,14 @@ function App() {
             ...stock,
             news,
             dart: dartSignals?.dart ?? dart,
+            financial:
+              fundamentalsResult.status === "fulfilled" && !fundamentalsResult.value.error
+                ? fundamentalsResult.value
+                : stock.financial,
+            technicalDetail:
+              technicalsResult.status === "fulfilled" && !technicalsResult.value.error
+                ? technicalsResult.value
+                : stock.technicalDetail,
             riskScore: dartSignals?.riskScore ?? stock.riskScore,
             riskRank: dartSignals?.riskRank ?? stock.riskRank,
             trustScore: dartSignals?.trustScore ?? stock.trustScore,
@@ -937,6 +1026,7 @@ function App() {
 
               <Panel icon={<Activity />} title="시세 API 분석">
                 <Column title="테크니컬" items={selected.technicals} />
+                <TechnicalIndicators data={selected.technicalDetail} />
                 <Column title="펀더멘털" items={selected.fundamentals} />
               </Panel>
 
@@ -1077,6 +1167,30 @@ function FundamentalDetail({
         ))}
       </div>
 
+      {stock.financial?.metrics ? (
+        <div className="statementGrid">
+          <article>
+            <span>매출액</span>
+            <strong>{formatMoney(stock.financial.metrics.revenue)}</strong>
+          </article>
+          <article>
+            <span>영업이익</span>
+            <strong>{formatMoney(stock.financial.metrics.operatingIncome)}</strong>
+          </article>
+          <article>
+            <span>당기순이익</span>
+            <strong>{formatMoney(stock.financial.metrics.netIncome)}</strong>
+          </article>
+          <article>
+            <span>자산 / 부채 / 자본</span>
+            <strong>
+              {formatMoney(stock.financial.metrics.assets)} / {formatMoney(stock.financial.metrics.liabilities)} /{" "}
+              {formatMoney(stock.financial.metrics.equity)}
+            </strong>
+          </article>
+        </div>
+      ) : null}
+
       <div className="fundamentalSections">
         <section>
           <h4>개념 설명</h4>
@@ -1119,6 +1233,24 @@ function FundamentalDetail({
       </div>
     </section>
   );
+}
+
+function TechnicalIndicators({ data }: { data?: TechnicalPayload }) {
+  const indicators = data?.indicators;
+  if (!indicators) {
+    return <Column title="계산 지표" items={["가격 히스토리 수집 중", "이평선/V25/지지저항 계산 대기"]} />;
+  }
+
+  const items = [
+    `5일 이동평균 ${formatNumber(indicators.ma5)}원`,
+    `20일 이동평균 ${formatNumber(indicators.ma20)}원`,
+    `60일 이동평균 ${formatNumber(indicators.ma60)}원`,
+    `V25 평균거래량 ${formatNumber(indicators.v25)}주`,
+    `20일 지지선 ${formatNumber(indicators.support20)}원`,
+    `20일 저항선 ${formatNumber(indicators.resistance20)}원`,
+  ];
+
+  return <Column title="계산 지표" items={items} />;
 }
 
 function InfoTip({ text }: { text: string }) {

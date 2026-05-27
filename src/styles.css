@@ -584,7 +584,7 @@ h3 {
 
 .fundamentalMetrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -626,6 +626,32 @@ h3 {
 
 .fundamentalMetric small {
   line-height: 1.45;
+}
+
+.statementGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.statementGrid article {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.statementGrid span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.statementGrid strong {
+  font-size: 15px;
+  line-height: 1.35;
 }
 
 .fundamentalSections {
@@ -716,7 +742,8 @@ h3 {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .fundamentalMetrics {
+  .fundamentalMetrics,
+  .statementGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -754,7 +781,8 @@ h3 {
 
   .analysisGrid,
   .metricGrid,
-  .fundamentalMetrics {
+  .fundamentalMetrics,
+  .statementGrid {
     grid-template-columns: 1fr;
   }
 
