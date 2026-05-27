@@ -97,6 +97,17 @@ type DartItem = {
   url?: string;
 };
 
+type ComputedDart = {
+  dart: Disclosure[];
+  riskScore: number;
+  riskRank: number;
+  trustScore: number;
+  accuracyScore: number;
+  fundamentals: string[];
+  reports: Report[];
+  verdict: string;
+};
+
 const stocks: Stock[] = [
   {
     code: "005930",
@@ -369,18 +380,110 @@ const levelText: Record<SignalLevel, string> = {
 
 const metricExplanations = {
   trust:
-    "이 숫자는 ‘이 종목을 판단할 때 참고할 만한 근거가 얼마나 충분한가’를 뜻해요. 거래량이 많고 확인 가능한 데이터가 많을수록 올라가고, 공시·리포트처럼 중요한 자료가 비어 있으면 낮아집니다. 간단식: 기본점수 + 거래량 보정 - 빠진 데이터 감점.",
+    "이 숫자는 ‘판단 근거가 얼마나 충분한가’를 뜻해요. 거래량, 뉴스, DART 공시가 확인될수록 올라가고 자료가 비어 있으면 낮아집니다. 지금은 DART 최근 공시 개수와 최근성을 반영합니다.",
   volumeRank:
     "오늘 시장에서 얼마나 많이 사고팔렸는지를 보는 순위예요. KOSPI/KOSDAQ 종목을 거래량이 많은 순서대로 줄 세운 값입니다. 순위가 높을수록 시장 관심이 크다고 볼 수 있어요.",
   surgeRank:
     "오늘 가격이 얼마나 빠르게 움직였는지를 보는 순위예요. 등락률이 큰 종목일수록 앞에 옵니다. 단, 많이 올랐다는 뜻이지 반드시 좋은 종목이라는 뜻은 아니에요.",
   risk:
-    "단기 변동성이 얼마나 큰지 보여주는 주의 신호예요. 가격이 급하게 오르거나 내릴수록, 그리고 관심이 몰릴수록 높아집니다. 쉬운 계산: 등락률의 크기 + 관심도 보정 + 기본 위험점수.",
+    "단기 변동성이 얼마나 큰지 보여주는 주의 신호예요. 가격이 급하게 움직이고, 최근 공시가 많거나 임원·주요주주·정정 같은 민감 공시가 있으면 더 높아집니다.",
   accuracy:
-    "현재 분석에 사용된 데이터가 얼마나 완성되어 있는지를 뜻해요. 무료 공개 데이터만 쓰는 지금은 기본 점수가 낮게 잡혀 있고, DART 공시·증권사 리포트·실시간 시세가 붙을수록 올라갑니다.",
+    "분석에 사용된 데이터가 얼마나 채워졌는지를 뜻해요. 시세와 뉴스만 있을 때보다 DART 공시가 실제로 연결되면 점수가 올라갑니다.",
   sentiment:
     "사람들이 이 종목에 얼마나 관심을 보이는지 보는 보조 지표예요. 지금은 뉴스와 검색 관심을 바탕으로 임시 계산하고, 이후 커뮤니티/종목토론방 데이터가 붙으면 더 정확해집니다.",
 };
+
+function clampScore(value: number, min = 0, max = 100) {
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function classifyDisclosure(title: string): { impact: SignalLevel; weight: number; label: string } {
+  if (/정정|횡령|배임|불성실|상장폐지|관리종목|감사의견|소송|압수|조사/.test(title)) {
+    return { impact: "danger", weight: 12, label: "주의 공시" };
+  }
+  if (/임원|주요주주|대량보유|자기주식|전환사채|신주인수권|유상증자|감자/.test(title)) {
+    return { impact: "medium", weight: 7, label: "수급/지분 공시" };
+  }
+  if (/잠정|실적|매출|영업이익|공급계약|투자|배당/.test(title)) {
+    return { impact: "high", weight: 4, label: "사업/실적 공시" };
+  }
+  return { impact: "low", weight: 2, label: "일반 공시" };
+}
+
+function daysSinceDartDate(value: string) {
+  const normalized = value.replace(/\./g, "");
+  if (!/^\d{8}$/.test(normalized)) return 30;
+  const date = new Date(`${normalized.slice(0, 4)}-${normalized.slice(4, 6)}-${normalized.slice(6, 8)}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return 30;
+  return Math.max(0, Math.floor((Date.now() - date.getTime()) / 86_400_000));
+}
+
+function applyDartSignals(stock: Stock, items: DartItem[]): ComputedDart {
+  if (!items.length) {
+    return {
+      dart: stock.dart,
+      riskScore: stock.riskScore,
+      riskRank: stock.riskRank,
+      trustScore: stock.trustScore,
+      accuracyScore: stock.accuracyScore,
+      fundamentals: stock.fundamentals,
+      reports: stock.reports,
+      verdict: stock.verdict,
+    };
+  }
+
+  const enriched = items.map((item) => {
+    const classified = classifyDisclosure(item.title);
+    return {
+      item,
+      ...classified,
+      days: daysSinceDartDate(item.date),
+    };
+  });
+  const recentCount = enriched.filter((entry) => entry.days <= 7).length;
+  const dangerCount = enriched.filter((entry) => entry.impact === "danger").length;
+  const disclosureRisk = enriched.reduce(
+    (sum, entry) => sum + entry.weight + (entry.days <= 3 ? 4 : entry.days <= 7 ? 2 : 0),
+    0,
+  );
+  const nextRiskScore = clampScore(stock.riskScore + disclosureRisk, 18, 96);
+  const nextTrustScore = clampScore(stock.trustScore + 10 + Math.min(items.length, 5) * 2 - dangerCount * 3, 0, 95);
+  const nextAccuracyScore = clampScore(stock.accuracyScore + 18 + Math.min(items.length, 5) * 2, 0, 92);
+  const headline = enriched[0];
+  const dart = enriched.map(({ item, impact, label, days }) => ({
+    title: item.title,
+    date: formatDartDate(item.date),
+    type: label,
+    summary:
+      days <= 7
+        ? `최근 ${days || "당일"}일 내 접수된 ${label}입니다. 단기 수급과 변동성 판단에 반영했습니다.`
+        : `최근 30일 내 접수된 ${label}입니다. 종목 판단 근거에 반영했습니다.`,
+    impact,
+  }));
+
+  return {
+    dart,
+    riskScore: nextRiskScore,
+    riskRank: nextRiskScore > 70 ? 1 : nextRiskScore > 50 ? 2 : 3,
+    trustScore: nextTrustScore,
+    accuracyScore: nextAccuracyScore,
+    fundamentals: [
+      `DART 최근 공시 ${items.length}건 확인`,
+      `최근 7일 공시 ${recentCount}건${dangerCount ? `, 주의 공시 ${dangerCount}건` : ""}`,
+      ...stock.fundamentals.slice(0, 1),
+    ],
+    reports: [
+      {
+        broker: "DART 기반 보조 판단",
+        opinion: dangerCount ? "주의" : recentCount ? "확인 필요" : "참고",
+        target: "-",
+        summary: `${headline.item.title} 등 최근 공시를 반영했습니다. 리포트 원문 연결 전까지는 공시 신호를 우선 참고합니다.`,
+        confidence: dangerCount ? "danger" : "medium",
+      },
+    ],
+    verdict: `${stock.verdict} DART 최근 공시 ${items.length}건을 추가 반영해 신뢰도 ${nextTrustScore}, 정확성 ${nextAccuracyScore}, 위험지수 ${nextRiskScore}로 갱신했습니다.`,
+  };
+}
 
 function rowToStock(row: MarketRow, index: number): Stock {
   const riskScore = Math.min(92, Math.max(18, Math.round(Math.abs(row.changeRate) * 9 + index * 5 + 24)));
@@ -543,16 +646,27 @@ function App() {
             dartResult.status === "fulfilled" &&
             Array.isArray(dartResult.value.items) &&
             dartResult.value.items.length
-              ? dartResult.value.items.map((item: DartItem) => ({
-                  title: item.title,
-                  date: formatDartDate(item.date),
-                  type: item.type,
-                  summary: "OpenDART 공시 원문 기준 최근 접수 항목입니다.",
-                  impact: "medium" as SignalLevel,
-                }))
+              ? dartResult.value.items
               : stock.dart;
+          const dartSignals =
+            dartResult.status === "fulfilled" &&
+            Array.isArray(dartResult.value.items) &&
+            dartResult.value.items.length
+              ? applyDartSignals(stock, dartResult.value.items)
+              : null;
 
-          return { ...stock, news, dart };
+          return {
+            ...stock,
+            news,
+            dart: dartSignals?.dart ?? dart,
+            riskScore: dartSignals?.riskScore ?? stock.riskScore,
+            riskRank: dartSignals?.riskRank ?? stock.riskRank,
+            trustScore: dartSignals?.trustScore ?? stock.trustScore,
+            accuracyScore: dartSignals?.accuracyScore ?? stock.accuracyScore,
+            fundamentals: dartSignals?.fundamentals ?? stock.fundamentals,
+            reports: dartSignals?.reports ?? stock.reports,
+            verdict: dartSignals?.verdict ?? stock.verdict,
+          };
         }),
       );
     }
